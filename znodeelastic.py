@@ -1,5 +1,4 @@
 from elasticsearch import Elasticsearch, helpers
-from elasticsearch.helpers import BulkIndexError
 from elasticsearch.helpers import parallel_bulk
 from elasticsearch.exceptions import BadRequestError, ConnectionError, TransportError, ApiError, NotFoundError
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -408,8 +407,10 @@ def processdraftproduct (host,ValueData,index_name,preview,lastexecutionofloop= 
                            return logs
                     if ispreviewonly==1:
                             upsert_by_product_locale(es,ValueData,index_name)
-                    else :        
-                        updateversionids = updatedversion.split(",")
+                    else : 
+                        updateversionids=[]
+                        if   updatedversion:     
+                             updateversionids = updatedversion.split(",")
                         chunk_size = get_dynamic_chunk_size(es,avgrecordsizebytes)  
                         print(chunk_size) 
                         with ThreadPoolExecutor(max_workers=6) as executor:
@@ -438,7 +439,7 @@ def processdraftproduct (host,ValueData,index_name,preview,lastexecutionofloop= 
         except Exception as e:
             logs.append({
                 "status": "error",
-                "type": "OuterError",
+                "type": "OuterError processdraftproduct",
                 "message": str(e)
             })
         return logs  
@@ -452,7 +453,7 @@ def processindexdata (host,ValueData,index_name,oldIndexname,indexbody="",previe
                 matching_indices = list(es.indices.get_alias(index=oldIndexname+"*").keys())
                 es.indices.put_mapping(index=",".join(matching_indices) , body={"_meta": {"marker": "can-be-deleted"}})
                 createelasticindex(es,index_name,indexbody)
-            updateversionids = updatedversion.split(",")
+            
             chunk_size = get_dynamic_chunk_size(es,avgrecordsizebytes)   
             with ThreadPoolExecutor(max_workers=6) as executor:
                  futures = []
@@ -468,6 +469,7 @@ def processindexdata (host,ValueData,index_name,oldIndexname,indexbody="",previe
                         es.indices.put_settings(index=index_name,body={"settings": {"index.blocks.write": True}})
                         es.indices.clone(index=index_name,target=previewindexname,body={"settings": {"index.blocks.write": False,"number_of_replicas": 0}})
                         es.indices.put_settings(index=previewindexname,body={"settings": {"index.lifecycle.name": "Merge-segment-800"}})
+                        updateversionids = updatedversion.split(",")
                         updatebody = build_update_by_query_body(updateversionids) 
                         es.indices.refresh(index=previewindexname)                  
                         es.update_by_query(index=previewindexname, body=updatebody,wait_for_completion=False, slices=2, requests_per_second=-1, refresh=True,conflicts="proceed") 
@@ -493,7 +495,7 @@ def processindexdata (host,ValueData,index_name,oldIndexname,indexbody="",previe
         except Exception as e:
             logs.append({
                 "status": "error",
-                "type": "OuterError",
+                "type": "OuterError processindexdata",
                 "message": str(e)
             })
         return logs  
